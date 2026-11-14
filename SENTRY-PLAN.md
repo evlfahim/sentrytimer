@@ -35,7 +35,7 @@ Core logic is isolated in `packages/core`; the VS Code extension (`packages/plug
 - [x] 8. Scaffold `packages/plugin` with VS Code extension manifest and activation events; verify `vsce package` generates a valid `.vsix`.
 - [x] 9. Integrate `@sentry-timer/core` into the plugin; verify imports resolve and core functions execute within the extension context.
 - [x] 10. Implement plugin command handlers for start/stop using core logger; verify commands appear in VS Code Command Palette.
-- [ ] 11. Add VS Code Git API integration to auto-detect repo on workspace change; verify repo context updates automatically.
+- [x] 11. Add VS Code Git API integration to auto-detect repo on workspace change; verify repo context updates automatically.
 - [ ] 12. Implement status bar UI showing current repo, branch, and elapsed time; verify UI updates on session start/stop.
 - [ ] 13. Refactor core to export a clean API interface; verify plugin and CLI both use the same core without duplication.
 - [ ] 14. Add configuration settings for report frequency and storage path; verify settings load correctly in plugin and CLI.

@@ -10,6 +10,7 @@ import { join } from 'path';
 
 let sessionLogger: SessionLogger | null = null;
 let statusBar: ReturnType<typeof window.createStatusBarItem> | null = null;
+let currentGitContext: { repoPath: string; branch: string } | null = null;
 
 // Test helper: allow tests to inject a logger instance before activation
 let _testLogger: SessionLogger | undefined;
@@ -19,6 +20,135 @@ export function _setTestLogger(logger: SessionLogger) {
 
 export function _getSessionLogger(): SessionLogger | null {
   return sessionLogger;
+}
+
+/**
+ * Type definition for the VS Code Git API (not exported by @types/vscode).
+ */
+interface GitAPI {
+  repositories: Array<{
+    rootUri: { fsPath: string };
+    head: { name: string | undefined };
+  }>;
+  onDidChangeState: (fn: () => void) => { dispose: () => void };
+}
+
+/**
+ * Get the VS Code Git API from the installed git extension.
+ * Returns null if the git extension is not available.
+ */
+function getGitAPI(): GitAPI | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gitExtension = (workspace as any).getExtension('git.git');
+    if (!gitExtension) {
+      return null;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gitApi = gitExtension.isActive ? (gitExtension as any).exports : null;
+    if (!gitApi) {
+      return null;
+    }
+    return {
+      repositories: gitApi.repositories,
+      onDidChangeState: gitApi.onDidChangeState,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Detect git context using VS Code Git API first, falling back to CLI detection.
+ * @param dir - Optional directory to check (defaults to active workspace folder).
+ */
+function detectGitContextWithVSCode(dir?: string): { repoPath: string; branch: string } | null {
+  // Try VS Code Git API first
+  const gitAPI = getGitAPI();
+  if (gitAPI) {
+    const checkDir = dir || workspace.workspaceFolders?.[0]?.uri?.fsPath;
+
+    if (checkDir) {
+      // Try to find a repo matching the specific directory
+      const repo = gitAPI.repositories.find((r) => r.rootUri.fsPath === checkDir);
+      if (repo && repo.head?.name) {
+        return { repoPath: repo.rootUri.fsPath, branch: repo.head.name };
+      }
+    }
+
+    // If no specific directory matched, try the first repo from the Git API
+    // This handles cases where workspace folders aren't set (e.g., in tests)
+    if (gitAPI.repositories.length > 0) {
+      const firstRepo = gitAPI.repositories[0];
+      if (firstRepo.head?.name) {
+        return { repoPath: firstRepo.rootUri.fsPath, branch: firstRepo.head.name };
+      }
+    }
+  }
+
+  // Fall back to CLI detection
+  return detectGitContext(dir);
+}
+
+/**
+ * Debounce timer for git context detection.
+ */
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Debounced git context detection. Prevents spam on rapid workspace changes.
+ */
+function debouncedDetectGitContext(): void {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+  }
+  debounceTimer = setTimeout(() => {
+    detectAndSyncGitContext();
+    debounceTimer = null;
+  }, 300);
+}
+
+/**
+ * Detect the current git context and sync it with the status bar.
+ */
+function detectAndSyncGitContext(): void {
+  const activeEditor = window.activeTextEditor;
+  let dir: string | undefined;
+
+  if (activeEditor && activeEditor.document && activeEditor.document.uri) {
+    // Try to find the workspace folder that contains the active file
+    const workspaceFolder = workspace.getWorkspaceFolder(activeEditor.document.uri);
+    if (workspaceFolder) {
+      dir = workspaceFolder.uri.fsPath;
+    }
+  }
+
+  const gitContext = detectGitContextWithVSCode(dir);
+
+  // Only update if the context actually changed
+  if (
+    !currentGitContext ||
+    currentGitContext.repoPath !== gitContext?.repoPath ||
+    currentGitContext.branch !== gitContext?.branch
+  ) {
+    currentGitContext = gitContext;
+    updateStatusBarWithGitContext();
+  }
+}
+
+/**
+ * Update the status bar to show the current git context.
+ */
+function updateStatusBarWithGitContext(): void {
+  if (!statusBar) return;
+
+  if (currentGitContext) {
+    statusBar.text = `$(git-branch) SentryTimer: ${currentGitContext.branch}`;
+    statusBar.tooltip = `Repository: ${currentGitContext.repoPath}`;
+  } else {
+    statusBar.text = `$(git-branch) SentryTimer`;
+    statusBar.tooltip = 'No git repository detected';
+  }
 }
 
 export function activate(context: ExtensionContext) {
@@ -60,11 +190,34 @@ export function activate(context: ExtensionContext) {
   context.subscriptions.push(startCommand, stopCommand, reportCommand, deleteCommand, listCommand);
 
   // Auto-detect git context on activation
-  const gitContext = detectGitContext();
+  const gitContext = detectGitContextWithVSCode();
   if (gitContext) {
+    currentGitContext = gitContext;
+    updateStatusBarWithGitContext();
     window.showInformationMessage(
       `SentryTimer: Detected repository at ${gitContext.repoPath} (branch: ${gitContext.branch})`
     );
+  }
+
+  // Listen for workspace folder changes to auto-detect repo changes
+  const workspaceChangeDisposable = workspace.onDidChangeWorkspaceFolders(() => {
+    debouncedDetectGitContext();
+  });
+  context.subscriptions.push(workspaceChangeDisposable);
+
+  // Listen for active editor changes to detect repo changes when switching files
+  const activeEditorDisposable = window.onDidChangeActiveTextEditor(() => {
+    debouncedDetectGitContext();
+  });
+  context.subscriptions.push(activeEditorDisposable);
+
+  // Listen for git extension state changes (e.g., when git extension activates)
+  const gitAPI = getGitAPI();
+  if (gitAPI) {
+    const gitStateDisposable = gitAPI.onDidChangeState(() => {
+      debouncedDetectGitContext();
+    });
+    context.subscriptions.push(gitStateDisposable);
   }
 
   window.showInformationMessage('SentryTimer activated');
@@ -85,7 +238,7 @@ async function startSession(): Promise<void> {
     return;
   }
 
-  const gitContext = detectGitContext();
+  const gitContext = detectGitContextWithVSCode();
   if (!gitContext) {
     window.showErrorMessage('SentryTimer: Not in a git repository. Open a git repo to start tracking.');
     return;

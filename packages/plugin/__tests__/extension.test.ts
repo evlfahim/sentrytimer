@@ -683,3 +683,394 @@ describe('plugin deactivation', () => {
     expect(statusBarMock.dispose).toHaveBeenCalled();
   });
 });
+
+describe('VS Code Git API integration — auto-detect on workspace change', () => {
+  let logger: SessionLogger;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dbPath = path.join(
+      fs.mkdtempSync(path.join(require('os').tmpdir(), 'sentry-timer-db-')),
+      'sessions.db'
+    );
+    logger = new SessionLogger(dbPath);
+    showInformationMessage.mockClear();
+    showErrorMessage.mockClear();
+    showWarningMessage.mockClear();
+    createStatusBarItem.mockClear();
+    registerCommand.mockClear();
+  });
+
+  afterEach(() => {
+    logger.close();
+    fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
+  });
+
+  it('should detect git context via VS Code Git API when available', async () => {
+    // Mock the VS Code Git extension
+    const mockGitAPI = {
+      repositories: [
+        {
+          rootUri: { fsPath: '/tmp/test-repo' },
+          head: { name: 'main' },
+        },
+      ],
+      onDidChangeState: jest.fn(),
+    };
+    const mockGitExtension = {
+      isActive: true,
+      exports: mockGitAPI,
+    };
+
+    // Directly set the mock's return value (getExtension is already a jest.fn in the mock)
+    const vscodeModule = require('vscode');
+    vscodeModule.workspace.getExtension.mockReturnValue(mockGitExtension);
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    // Should show the detected repository message
+    expect(showInformationMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Detected repository')
+    );
+  });
+
+  it('should fall back to CLI detection when Git API is not available', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    // Directly set the mock's return value to null (no git extension)
+    const vscodeModule = require('vscode');
+    vscodeModule.workspace.getExtension.mockReturnValue(null);
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    // Should still detect via CLI fallback
+    expect(showInformationMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Detected repository')
+    );
+  });
+
+  it('should register workspace folder change listener', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    const vscodeModule = require('vscode');
+    vscodeModule.workspace.getExtension.mockReturnValue(null);
+    const onDidChangeWorkspaceFolders = require('vscode').workspace.onDidChangeWorkspaceFolders as jest.Mock;
+    onDidChangeWorkspaceFolders.mockReturnValue({ dispose: jest.fn() });
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    // Should have registered the workspace folder change listener
+    expect(onDidChangeWorkspaceFolders).toHaveBeenCalled();
+  });
+
+  it('should register active text editor change listener', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    const vscodeModule = require('vscode');
+    vscodeModule.workspace.getExtension.mockReturnValue(null);
+    const onDidChangeActiveTextEditor = require('vscode').window.onDidChangeActiveTextEditor as jest.Mock;
+    onDidChangeActiveTextEditor.mockReturnValue({ dispose: jest.fn() });
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    // Should have registered the active editor change listener
+    expect(onDidChangeActiveTextEditor).toHaveBeenCalled();
+  });
+
+  it('should register git state change listener when Git API is available', async () => {
+    const mockGitAPI = {
+      repositories: [
+        {
+          rootUri: { fsPath: '/tmp/test-repo' },
+          head: { name: 'main' },
+        },
+      ],
+      onDidChangeState: jest.fn(),
+    };
+    const mockGitExtension = {
+      isActive: true,
+      exports: mockGitAPI,
+    };
+
+    const vscodeModule = require('vscode');
+    vscodeModule.workspace.getExtension.mockReturnValue(mockGitExtension);
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    // Should have called onDidChangeState on the git API
+    expect(mockGitAPI.onDidChangeState).toHaveBeenCalled();
+  });
+
+  it('should use VS Code Git API repo info in startSession', async () => {
+    const mockGitAPI = {
+      repositories: [
+        {
+          rootUri: { fsPath: '/tmp/test-repo' },
+          head: { name: 'feature/new-ui' },
+        },
+      ],
+      onDidChangeState: jest.fn(),
+    };
+    const mockGitExtension = {
+      isActive: true,
+      exports: mockGitAPI,
+    };
+
+    const vscodeModule = require('vscode');
+    vscodeModule.workspace.getExtension.mockReturnValue(mockGitExtension);
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+    await startHandler();
+
+    // Should have started a session with the VS Code Git API branch
+    const lastCall = getLastInfoCall();
+    expect(lastCall[0]).toContain('feature/new-ui');
+  });
+
+  it('should update status bar with git context on activation', async () => {
+    const mockGitAPI = {
+      repositories: [
+        {
+          rootUri: { fsPath: '/tmp/test-repo' },
+          head: { name: 'develop' },
+        },
+      ],
+      onDidChangeState: jest.fn(),
+    };
+    const mockGitExtension = {
+      isActive: true,
+      exports: mockGitAPI,
+    };
+
+    const vscodeModule = require('vscode');
+    vscodeModule.workspace.getExtension.mockReturnValue(mockGitExtension);
+
+    const statusBarMock = {
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    };
+    createStatusBarItem.mockReturnValue(statusBarMock);
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    // Status bar should show the git branch
+    expect(statusBarMock.text).toContain('develop');
+    expect(statusBarMock.tooltip).toContain('/tmp/test-repo');
+  });
+
+  it('should handle no git extension gracefully', async () => {
+    const vscodeModule = require('vscode');
+    vscodeModule.workspace.getExtension.mockReturnValue(null);
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue(null);
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    // Should still activate without error
+    expect(showInformationMessage).toHaveBeenCalledWith('SentryTimer activated');
+  });
+
+  it('should handle git extension error gracefully', async () => {
+    const vscodeModule = require('vscode');
+    vscodeModule.workspace.getExtension.mockImplementation(() => {
+      throw new Error('Extension not found');
+    });
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    // Should fall back to CLI detection and still activate
+    expect(showInformationMessage).toHaveBeenCalledWith('SentryTimer activated');
+  });
+
+  it('should debounce rapid workspace changes', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+      });
+
+      const vscodeModule = require('vscode');
+      vscodeModule.workspace.getExtension.mockReturnValue(null);
+      const onDidChangeWorkspaceFolders = require('vscode').workspace.onDidChangeWorkspaceFolders as jest.Mock;
+      onDidChangeWorkspaceFolders.mockReturnValue({ dispose: jest.fn() });
+
+      createStatusBarItem.mockReturnValue({
+        show: jest.fn(),
+        dispose: jest.fn(),
+        text: '',
+        tooltip: '',
+      });
+
+      const { activate } = reloadExtension();
+      _setTestLogger(logger);
+      activate(new ExtensionContext());
+
+      // Get the debounce callback
+      const workspaceChangeCallback = onDidChangeWorkspaceFolders.mock.calls[0][0];
+
+      // Call it multiple times rapidly
+      workspaceChangeCallback();
+      workspaceChangeCallback();
+      workspaceChangeCallback();
+
+      // At this point, no actual detection should have happened yet (debounce not fired)
+      // The debounce timer is set to 300ms
+
+      // Advance time past the debounce period
+      jest.advanceTimersByTime(500);
+
+      // Now the detection should have happened once (debounced)
+      expect(require('@sentry-timer/core').detectGitContext).toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('should update status bar when git context changes via debounced detection', async () => {
+    jest.useFakeTimers();
+    try {
+      const mockGitAPI = {
+        repositories: [
+          {
+            rootUri: { fsPath: '/tmp/repo-1' },
+            head: { name: 'main' },
+          },
+        ],
+        onDidChangeState: jest.fn(),
+      };
+      const mockGitExtension = {
+        isActive: true,
+        exports: mockGitAPI,
+      };
+
+      const vscodeModule = require('vscode');
+      vscodeModule.workspace.getExtension.mockReturnValue(mockGitExtension);
+
+      const statusBarMock = {
+        show: jest.fn(),
+        dispose: jest.fn(),
+        text: '',
+        tooltip: '',
+      };
+      createStatusBarItem.mockReturnValue(statusBarMock);
+
+      const { activate } = reloadExtension();
+      _setTestLogger(logger);
+      activate(new ExtensionContext());
+
+      // Initial status bar should show 'main'
+      expect(statusBarMock.text).toContain('main');
+
+      // Simulate a workspace change that would trigger debounced detection
+      const onDidChangeWorkspaceFolders = require('vscode').workspace.onDidChangeWorkspaceFolders as jest.Mock;
+      const workspaceChangeCallback = onDidChangeWorkspaceFolders.mock.calls[0][0];
+
+      // Change the git API to return a different repo
+      mockGitAPI.repositories[0] = {
+        rootUri: { fsPath: '/tmp/repo-2' },
+        head: { name: 'feature/new-feature' },
+      };
+
+      // Trigger the debounced detection
+      workspaceChangeCallback();
+      jest.advanceTimersByTime(500);
+
+      // Status bar should now show the new branch
+      expect(statusBarMock.text).toContain('feature/new-feature');
+      expect(statusBarMock.tooltip).toContain('/tmp/repo-2');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
