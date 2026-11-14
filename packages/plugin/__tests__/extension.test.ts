@@ -1234,8 +1234,9 @@ describe('status bar UI — elapsed time and context display', () => {
       expect(statusBarMock.text).toContain('main');
 
       // After another second, elapsed time should increase again
+      const textAfter1s = statusBarMock.text;
       jest.advanceTimersByTime(1000);
-      expect(statusBarMock.text).not.toBe(statusBarMock.text); // text changed at least once
+      expect(statusBarMock.text).not.toBe(textAfter1s);
     } finally {
       jest.useRealTimers();
     }
