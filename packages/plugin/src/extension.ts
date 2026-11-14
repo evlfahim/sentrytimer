@@ -6,13 +6,29 @@ import {
   generateMarkdownReport,
   type TimeEntry,
 } from '@sentry-timer/core';
+import { join } from 'path';
 
 let sessionLogger: SessionLogger | null = null;
 let statusBar: ReturnType<typeof window.createStatusBarItem> | null = null;
 
+// Test helper: allow tests to inject a logger instance before activation
+let _testLogger: SessionLogger | undefined;
+export function _setTestLogger(logger: SessionLogger) {
+  _testLogger = logger;
+}
+
+export function _getSessionLogger(): SessionLogger | null {
+  return sessionLogger;
+}
+
 export function activate(context: ExtensionContext) {
-  // Initialize the session logger
-  sessionLogger = new SessionLogger();
+  // Use test logger if provided, otherwise create a new one
+  if (_testLogger) {
+    sessionLogger = _testLogger;
+  } else {
+    const dbPath = join(process.cwd(), '.sentry-timer', 'sessions.db');
+    sessionLogger = new SessionLogger(dbPath);
+  }
 
   // Create and configure the status bar
   statusBar = window.createStatusBarItem(StatusBarAlignment.Right, 100);

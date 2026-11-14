@@ -2,6 +2,7 @@ import { SessionLogger, detectGitContext, generateWeeklyReport, generateMarkdown
 import * as fs from 'fs';
 import * as path from 'path';
 import { window, commands, workspace, StatusBarAlignment, ExtensionContext } from 'vscode';
+import { _setTestLogger, _getSessionLogger } from '../src/extension';
 
 // Access mocked vscode members
 const createStatusBarItem = window.createStatusBarItem as jest.Mock;
@@ -60,6 +61,7 @@ describe('plugin command handlers — startSession', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
@@ -82,6 +84,7 @@ describe('plugin command handlers — startSession', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
@@ -113,6 +116,7 @@ describe('plugin command handlers — startSession', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
@@ -169,6 +173,7 @@ describe('plugin command handlers — stopSession', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const stopHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.stop')?.[1];
@@ -192,6 +197,7 @@ describe('plugin command handlers — stopSession', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const stopHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.stop')?.[1];
@@ -253,6 +259,7 @@ describe('plugin command handlers — generateReport', () => {
     showTextDocument.mockResolvedValue({});
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const reportHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.report')?.[1];
@@ -284,6 +291,7 @@ describe('plugin command handlers — generateReport', () => {
     showTextDocument.mockResolvedValue({});
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const reportHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.report')?.[1];
@@ -343,6 +351,7 @@ describe('plugin command handlers — deleteSession', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const deleteHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.delete')?.[1];
@@ -380,6 +389,7 @@ describe('plugin command handlers — deleteSession', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const deleteHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.delete')?.[1];
@@ -418,6 +428,7 @@ describe('plugin command handlers — deleteSession', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const deleteHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.delete')?.[1];
@@ -477,6 +488,7 @@ describe('plugin command handlers — listSessions', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const listHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.list')?.[1];
@@ -504,6 +516,7 @@ describe('plugin command handlers — listSessions', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const listHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.list')?.[1];
@@ -548,6 +561,7 @@ describe('plugin activation — command registration', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     const registeredCommands = registerCommand.mock.calls.map((c: any[]) => c[0]);
@@ -574,6 +588,7 @@ describe('plugin activation — command registration', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     expect(showInformationMessage).toHaveBeenCalledWith('SentryTimer activated');
@@ -593,6 +608,7 @@ describe('plugin activation — command registration', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     expect(showInformationMessage).toHaveBeenCalledWith(
@@ -614,6 +630,7 @@ describe('plugin activation — command registration', () => {
     });
 
     const { activate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     expect(createStatusBarItem).toHaveBeenCalledWith(StatusBarAlignment.Right, 100);
@@ -658,6 +675,7 @@ describe('plugin deactivation', () => {
     createStatusBarItem.mockReturnValue(statusBarMock);
 
     const { activate, deactivate } = reloadExtension();
+    _setTestLogger(logger);
     activate(new ExtensionContext());
 
     deactivate();
