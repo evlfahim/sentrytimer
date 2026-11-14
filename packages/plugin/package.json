@@ -1,11 +1,69 @@
 {
-  "name": "@sentry-timer/plugin",
+  "name": "sentry-timer",
+  "displayName": "SentryTimer",
+  "description": "A local-first time tracker that auto-detects git repositories, logs sessions with branch context, and generates weekly reports.",
   "version": "1.0.0",
-  "description": "VS Code extension wrapper for SentryTimer.",
+  "publisher": "sentry-timer",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sentry-timer/sentrytimer"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "time-tracking",
+    "git",
+    "timer",
+    "productivity"
+  ],
   "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sentry-timer.start",
+        "title": "SentryTimer: Start Session",
+        "icon": "$(play)"
+      },
+      {
+        "command": "sentry-timer.stop",
+        "title": "SentryTimer: Stop Session",
+        "icon": "$(stop)"
+      },
+      {
+        "command": "sentry-timer.report",
+        "title": "SentryTimer: Generate Weekly Report",
+        "icon": "$(report)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "sentry-timer.start",
+          "when": "true"
+        },
+        {
+          "command": "sentry-timer.stop",
+          "when": "true"
+        },
+        {
+          "command": "sentry-timer.report",
+          "when": "true"
+        }
+      ]
+    }
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "jest --ci --runInBand --forceExit",
+    "vsce-package": "vsce package",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
@@ -18,8 +76,5 @@
     "jest": "^29.7.0",
     "ts-jest": "^29.1.2",
     "typescript": "^5.3.3"
-  },
-  "engines": {
-    "vscode": "^1.84.0"
   }
 }

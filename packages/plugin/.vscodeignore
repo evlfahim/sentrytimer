@@ -1,0 +1,15 @@
+**/__tests__/**
+**/*.test.ts
+**/*.test.js
+**/jest.config.js
+**/tsconfig.test.json
+**/*.map
+**/node_modules/**
+.git
+.gitignore
+.vscodeignore
+SENTRY-LOG.md
+SENTRY-PLAN.md
+jest.config.js
+package-lock.json
+tsconfig.json
