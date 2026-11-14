@@ -108,16 +108,16 @@ The CLI is exposed through the core package. Use it to manage sessions from the 
 
 ```bash
 # Start a session
-npm run build && node packages/core/dist/logger.js start
+npm run build && node packages/core/dist/cli.js start
 
 # Stop the active session
-npm run build && node packages/core/dist/logger.js stop
+npm run build && node packages/core/dist/cli.js stop
 
 # View all entries
-npm run build && node packages/core/dist/logger.js list
+npm run build && node packages/core/dist/cli.js list
 
 # Generate a weekly report
-npm run build && node packages/core/dist/report.js
+npm run build && node packages/core/dist/cli.js report
 ```
 
 ### VS Code Extension
@@ -189,17 +189,86 @@ id,repo_path,branch,start_time,end_time,duration_ms,commit_hash,commit_message
 
 ## Configuration
 
-### Storage Path
+SentryTimer supports three layers of configuration that merge together (highest priority first):
 
-By default, sessions are stored in `.sentry-timer/sessions.db` relative to the current working directory. You can customize this by passing a path to the `SessionLogger` constructor:
+1. **VS Code settings** (extension only)
+2. **Environment variables** (CLI and extension)
+3. **Config file** (`.sentry-timer.json`, found by walking up the directory tree)
+4. **Defaults** (built-in fallbacks)
 
-```typescript
-const logger = new SessionLogger('/path/to/custom/sessions.db');
+### Config File
+
+Create a `.sentry-timer.json` file in your project root (or any parent directory):
+
+```json
+{
+  "dbPath": "/path/to/custom/sessions.db",
+  "reportFrequency": "weekly"
+}
 ```
 
-### Report Frequency
+Supported options:
 
-Reports are generated on-demand. Use the CLI or extension commands to generate them whenever you need.
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `dbPath` | `string` | `.sentry-timer/sessions.db` | Path to the SQLite database file |
+| `reportFrequency` | `"weekly" \| "biweekly" \| "monthly"` | `"weekly"` | Time window for report generation |
+
+### Environment Variables
+
+Override configuration via environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `SENTRY_TIMER_DB` | Custom path to the SQLite database |
+| `SENTRY_TIMER_REPORT_FREQUENCY` | Report frequency: `weekly`, `biweekly`, or `monthly` |
+
+Example:
+
+```bash
+SENTRY_TIMER_DB=/tmp/sentry-timer.db \
+SENTRY_TIMER_REPORT_FREQUENCY=biweekly \
+node packages/core/dist/cli.js report
+```
+
+### VS Code Settings
+
+The extension reads settings from VS Code's settings UI or `settings.json`:
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `sentryTimer.dbPath` | `string` | `""` (use default) | Custom path to the SQLite database file |
+| `sentryTimer.reportFrequency` | `string` | `"weekly"` | Report frequency: `weekly`, `biweekly`, or `monthly` |
+
+To configure via `settings.json`:
+
+```json
+{
+  "sentryTimer.dbPath": "/path/to/custom/sessions.db",
+  "sentryTimer.reportFrequency": "biweekly"
+}
+```
+
+An empty `sentryTimer.dbPath` falls back to the default location. Invalid `reportFrequency` values are ignored and fall back to `"weekly"`.
+
+### Programmatic Configuration
+
+When using the core library directly, pass a config object to the `SessionLogger` constructor:
+
+```typescript
+import { SessionLogger, loadConfig } from '@sentry-timer/core';
+
+// Load config from file + env vars
+const config = loadConfig();
+const logger = new SessionLogger(undefined, config);
+
+// Or provide a custom config
+const customConfig = {
+  dbPath: '/my/custom/path.db',
+  reportFrequency: 'monthly',
+};
+const logger2 = new SessionLogger(undefined, customConfig);
+```
 
 ## Development
 
