@@ -8,9 +8,11 @@
     "packages/plugin"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces",
-    "clean": "npm run clean --workspaces --if-present && rm -rf node_modules"
+    "build": "npm run build -w @sentry-timer/core && npm run build -w @sentry-timer/plugin",
+    "test": "jest --ci --runInBand --forceExit",
+    "test:core": "jest --ci --runInBand --forceExit --selectProjects core",
+    "test:plugin": "jest --ci --runInBand --forceExit --selectProjects plugin",
+    "clean": "npm run clean --workspaces --if-present"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",

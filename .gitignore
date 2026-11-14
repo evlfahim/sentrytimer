@@ -1,6 +1,9 @@
 node_modules/
 dist/
 build/
+coverage/
+.sentry-timer/
+*.vsix
 __pycache__/
 .venv/
 *.log

@@ -1,24 +1,15 @@
+/** @type {import('jest').Config} */
 module.exports = {
-  preset: 'ts-jest',
+  displayName: 'plugin',
   testEnvironment: 'node',
   roots: ['<rootDir>/__tests__'],
-  testMatch: ['**/__tests__/**/*.test.ts'],
-  collectCoverageFrom: ['src/**/*.ts'],
-  coverageDirectory: '../coverage',
-  coverageReporters: ['text', 'lcov'],
-  forceExit: true,
-  detectOpenHandles: false,
-  testTimeout: 10000,
+  testMatch: ['**/*.test.ts'],
+  moduleFileExtensions: ['ts', 'js', 'json', 'node'],
+  // Resolve core from source so plugin tests do not depend on core/dist or the workspace symlink.
   moduleNameMapper: {
-    '^@sentry-timer/core$': '<rootDir>/../core/dist/index.js',
+    '^@sentry-timer/core$': '<rootDir>/../core/src/index.ts',
   },
   transform: {
-    '^.+\\.tsx?$': [
-      'ts-jest',
-      {
-        tsconfig: '<rootDir>/tsconfig.json',
-        isolatedModules: true,
-      },
-    ],
+    '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.test.json' }],
   },
 };

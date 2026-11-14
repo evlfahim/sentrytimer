@@ -1,12 +1,12 @@
+/** @type {import('jest').Config} */
 module.exports = {
-  preset: 'ts-jest',
+  displayName: 'core',
   testEnvironment: 'node',
   roots: ['<rootDir>/__tests__'],
-  testMatch: ['**/__tests__/**/*.test.ts'],
-  collectCoverageFrom: ['src/**/*.ts'],
-  coverageDirectory: '../coverage',
-  coverageReporters: ['text', 'lcov'],
-  forceExit: true,
-  detectOpenHandles: false,
+  testMatch: ['**/*.test.ts'],
+  moduleFileExtensions: ['ts', 'js', 'json', 'node'],
+  transform: {
+    '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.test.json' }],
+  },
   globalTeardown: '<rootDir>/__tests__/globalTeardown.ts',
 };

@@ -4,9 +4,9 @@
   "description": "VS Code extension wrapper for SentryTimer.",
   "main": "./dist/extension.js",
   "scripts": {
-    "build": "tsc",
-    "test": "jest --config jest.config.js",
-    "clean": "rm -rf dist"
+    "build": "tsc -p tsconfig.json",
+    "test": "jest --ci --runInBand --forceExit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
     "@sentry-timer/core": "1.0.0"
