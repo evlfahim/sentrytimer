@@ -25,7 +25,7 @@ TypeScript, Node.js, SQLite (better-sqlite3), Jest, Commander.js, VS Code Extens
 Core logic is isolated in `packages/core`; the VS Code extension (`packages/plugin`) imports this library to handle IDE events, UI, and git context, while the core manages storage, logging, and reporting.
 
 ## Steps
-- [ ] 1. Initialize monorepo structure with `packages/core` and `packages/plugin`; configure TypeScript, Jest, and build scripts; verify build and test infrastructure with `npm run build && npm test`.
+- [x] 1. Initialize monorepo structure with `packages/core` and `packages/plugin`; configure TypeScript, Jest, and build scripts; verify build and test infrastructure with `npm run build && npm test`.
 - [ ] 2. Implement `core/src/git.ts` to detect active git repository and branch using `git rev-parse`; verify with `node dist/git.js` in a test repo.
 - [ ] 3. Implement `core/src/logger.ts` to start/stop sessions and persist entries to SQLite; verify with `node dist/logger.js start` and `stop`.
 - [ ] 4. Implement `core/src/report.ts` to generate weekly summaries by repo and branch; verify with `node dist/report.js` outputting Markdown.
