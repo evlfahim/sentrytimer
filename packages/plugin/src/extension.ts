@@ -12,6 +12,9 @@ let sessionLogger: SessionLogger | null = null;
 let statusBar: ReturnType<typeof window.createStatusBarItem> | null = null;
 let currentGitContext: { repoPath: string; branch: string } | null = null;
 
+// Elapsed time update timer
+let elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
 // Test helper: allow tests to inject a logger instance before activation
 let _testLogger: SessionLogger | undefined;
 export function _setTestLogger(logger: SessionLogger) {
@@ -142,12 +145,49 @@ function detectAndSyncGitContext(): void {
 function updateStatusBarWithGitContext(): void {
   if (!statusBar) return;
 
+  // Check if there's an active session — if so, show session info instead
+  const activeSession = sessionLogger?.getActiveSession();
+  if (activeSession) {
+    updateStatusBar(activeSession);
+    return;
+  }
+
   if (currentGitContext) {
     statusBar.text = `$(git-branch) SentryTimer: ${currentGitContext.branch}`;
     statusBar.tooltip = `Repository: ${currentGitContext.repoPath}`;
   } else {
     statusBar.text = `$(git-branch) SentryTimer`;
     statusBar.tooltip = 'No git repository detected';
+  }
+}
+
+/**
+ * Start the elapsed time update timer.
+ * This updates the status bar every second with the current elapsed time.
+ */
+function startElapsedTimer(): void {
+  stopElapsedTimer();
+  elapsedTimer = setInterval(() => {
+    try {
+      if (!sessionLogger) return;
+      const activeSession = sessionLogger.getActiveSession();
+      if (activeSession) {
+        updateStatusBar(activeSession);
+      }
+    } catch {
+      // Database might be closed, stop the timer
+      stopElapsedTimer();
+    }
+  }, 1000);
+}
+
+/**
+ * Stop the elapsed time update timer.
+ */
+function stopElapsedTimer(): void {
+  if (elapsedTimer) {
+    clearInterval(elapsedTimer);
+    elapsedTimer = null;
   }
 }
 
@@ -224,6 +264,7 @@ export function activate(context: ExtensionContext) {
 }
 
 export function deactivate() {
+  stopElapsedTimer();
   if (statusBar) {
     statusBar.dispose();
   }
@@ -262,6 +303,7 @@ async function startSession(): Promise<void> {
   });
 
   updateStatusBar(entry);
+  startElapsedTimer();
   window.showInformationMessage(`SentryTimer: Session started on "${entry.branch}" (ID: ${entry.id})`);
 }
 
@@ -279,6 +321,7 @@ async function stopSession(): Promise<void> {
 
   const stopped = sessionLogger.stopSession(activeSession.id);
   if (stopped) {
+    stopElapsedTimer();
     const duration = formatDuration(stopped.durationMs);
     updateStatusBar(null);
     window.showInformationMessage(`SentryTimer: Session stopped. Duration: ${duration}`);
@@ -328,6 +371,7 @@ async function deleteSession(): Promise<void> {
     if (choice && choice.label === 'Yes, delete active session') {
       const deleted = sessionLogger.deleteEntry(activeSession.id);
       if (deleted) {
+        stopElapsedTimer();
         updateStatusBar(null);
         window.showInformationMessage(`SentryTimer: Session ${activeSession.id} deleted.`);
       }
@@ -405,12 +449,28 @@ async function listSessions(): Promise<void> {
   }
 }
 
+/**
+ * Calculate the elapsed time for a running session.
+ * Returns the elapsed duration in ms, or the entry's durationMs if already stopped.
+ */
+function getElapsedMs(entry: TimeEntry): number {
+  if (entry.durationMs !== null && entry.durationMs !== undefined) {
+    return entry.durationMs;
+  }
+  if (entry.endTime) {
+    return new Date(entry.endTime).getTime() - new Date(entry.startTime).getTime();
+  }
+  return new Date().getTime() - new Date(entry.startTime).getTime();
+}
+
 function updateStatusBar(entry: TimeEntry | null): void {
   if (!statusBar) return;
 
   if (entry) {
-    statusBar.text = `$(clock) SentryTimer: ${entry.branch}`;
-    statusBar.tooltip = `Session started at ${entry.startTime}`;
+    const elapsedMs = getElapsedMs(entry);
+    const elapsed = formatDuration(elapsedMs);
+    statusBar.text = `$(clock) SentryTimer: ${entry.branch} ${elapsed}`;
+    statusBar.tooltip = `Session started at ${entry.startTime}\nRepo: ${entry.repoPath}`;
   } else {
     statusBar.text = `$(clock) SentryTimer`;
     statusBar.tooltip = 'No active session';

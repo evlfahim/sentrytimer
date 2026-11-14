@@ -1074,3 +1074,356 @@ describe('VS Code Git API integration — auto-detect on workspace change', () =
     }
   });
 });
+
+describe('status bar UI — elapsed time and context display', () => {
+  let logger: SessionLogger;
+  let dbPath: string;
+  let vscodeModule: typeof import('vscode');
+
+  beforeEach(() => {
+    dbPath = path.join(
+      fs.mkdtempSync(path.join(require('os').tmpdir(), 'sentry-timer-db-')),
+      'sessions.db'
+    );
+    logger = new SessionLogger(dbPath);
+    showInformationMessage.mockClear();
+    showErrorMessage.mockClear();
+    showWarningMessage.mockClear();
+    createStatusBarItem.mockClear();
+    registerCommand.mockClear();
+
+    // Reset the vscode mock state to avoid leaking from previous test suites
+    vscodeModule = require('vscode');
+    vscodeModule.workspace.getExtension.mockReset();
+    vscodeModule.workspace.getExtension.mockReturnValue(null);
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReset();
+  });
+
+  afterEach(() => {
+    logger.close();
+    fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
+  });
+
+  it('should show elapsed time in status bar when session is running', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    const statusBarMock = {
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    };
+    createStatusBarItem.mockReturnValue(statusBarMock);
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+    await startHandler();
+
+    // Status bar should show the branch and elapsed time
+    expect(statusBarMock.text).toContain('main');
+    expect(statusBarMock.text).toContain('$(clock)');
+    // Elapsed time format: h m s (e.g., "0s", "1s", "1m 2s", "1h 2m 3s")
+    expect(statusBarMock.text).toMatch(/\d+s/);
+  });
+
+  it('should show repo path in tooltip when session is running', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    const statusBarMock = {
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    };
+    createStatusBarItem.mockReturnValue(statusBarMock);
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+    await startHandler();
+
+    // Tooltip should contain repo path
+    expect(statusBarMock.tooltip).toContain('/tmp/test-repo');
+  });
+
+  it('should stop elapsed timer when session is stopped', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+      });
+
+      const statusBarMock = {
+        show: jest.fn(),
+        dispose: jest.fn(),
+        text: '',
+        tooltip: '',
+      };
+      createStatusBarItem.mockReturnValue(statusBarMock);
+
+      const { activate } = reloadExtension();
+      _setTestLogger(logger);
+      activate(new ExtensionContext());
+
+      const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+      await startHandler();
+
+      // Verify elapsed timer was started (status bar should update)
+      const initialText = statusBarMock.text;
+      expect(initialText).toContain('main');
+
+      // Advance time to trigger elapsed timer update
+      jest.advanceTimersByTime(1500);
+      expect(statusBarMock.text).not.toBe(initialText);
+
+      // Stop the session
+      const stopHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.stop')?.[1];
+      await stopHandler();
+
+      // After stopping, no more updates should occur
+      const textAfterStop = statusBarMock.text;
+      jest.advanceTimersByTime(1500);
+      expect(statusBarMock.text).toBe(textAfterStop);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('should update status bar periodically while session is running', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+      });
+
+      const statusBarMock = {
+        show: jest.fn(),
+        dispose: jest.fn(),
+        text: '',
+        tooltip: '',
+      };
+      createStatusBarItem.mockReturnValue(statusBarMock);
+
+      const { activate } = reloadExtension();
+      _setTestLogger(logger);
+      activate(new ExtensionContext());
+
+      const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+      await startHandler();
+
+      // Initial state
+      const initialText = statusBarMock.text;
+      expect(initialText).toContain('main');
+
+      // After 1 second, elapsed time should increase
+      jest.advanceTimersByTime(1000);
+      expect(statusBarMock.text).not.toBe(initialText);
+      expect(statusBarMock.text).toContain('main');
+
+      // After another second, elapsed time should increase again
+      jest.advanceTimersByTime(1000);
+      expect(statusBarMock.text).not.toBe(statusBarMock.text); // text changed at least once
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('should show elapsed time with minutes when session runs long enough', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+      });
+
+      const statusBarMock = {
+        show: jest.fn(),
+        dispose: jest.fn(),
+        text: '',
+        tooltip: '',
+      };
+      createStatusBarItem.mockReturnValue(statusBarMock);
+
+      const { activate } = reloadExtension();
+      _setTestLogger(logger);
+      activate(new ExtensionContext());
+
+      const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+      await startHandler();
+
+      // Advance time to 1 minute 30 seconds
+      jest.advanceTimersByTime(90000);
+
+      // Status bar should show minutes
+      expect(statusBarMock.text).toContain('1m');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('should show elapsed time with hours when session runs long enough', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+      });
+
+      const statusBarMock = {
+        show: jest.fn(),
+        dispose: jest.fn(),
+        text: '',
+        tooltip: '',
+      };
+      createStatusBarItem.mockReturnValue(statusBarMock);
+
+      const { activate } = reloadExtension();
+      _setTestLogger(logger);
+      activate(new ExtensionContext());
+
+      const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+      await startHandler();
+
+      // Advance time to 1 hour 30 minutes
+      jest.advanceTimersByTime(5400000);
+
+      // Status bar should show hours
+      expect(statusBarMock.text).toContain('1h');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('should clear elapsed timer on deactivation', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+        repoPath: '/tmp/test-repo',
+        branch: 'main',
+      });
+
+      const statusBarMock = {
+        show: jest.fn(),
+        dispose: jest.fn(),
+        text: '',
+        tooltip: '',
+      };
+      createStatusBarItem.mockReturnValue(statusBarMock);
+
+      const { activate, deactivate } = reloadExtension();
+      _setTestLogger(logger);
+      activate(new ExtensionContext());
+
+      const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+      await startHandler();
+
+      // Advance time to trigger elapsed timer
+      jest.advanceTimersByTime(1500);
+
+      // Deactivate
+      deactivate();
+
+      // After deactivation, no more updates should occur
+      const textAfterDeactivate = statusBarMock.text;
+      jest.advanceTimersByTime(1500);
+      expect(statusBarMock.text).toBe(textAfterDeactivate);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('should show status bar with git context when no session is running', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'develop',
+    });
+
+    const statusBarMock = {
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    };
+    createStatusBarItem.mockReturnValue(statusBarMock);
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    // Status bar should show git branch without elapsed time
+    expect(statusBarMock.text).toContain('develop');
+    expect(statusBarMock.text).toContain('$(git-branch)');
+    expect(statusBarMock.tooltip).toContain('/tmp/test-repo');
+  });
+
+  it('should show no active session message when no session and no git context', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue(null);
+
+    const statusBarMock = {
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    };
+    createStatusBarItem.mockReturnValue(statusBarMock);
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    // Status bar should show no active session
+    expect(statusBarMock.text).toContain('$(clock) SentryTimer');
+    expect(statusBarMock.tooltip).toBe('No active session');
+  });
+
+  it('should update status bar when session is deleted', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    const statusBarMock = {
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    };
+    createStatusBarItem.mockReturnValue(statusBarMock);
+
+    const { activate } = reloadExtension();
+    _setTestLogger(logger);
+    activate(new ExtensionContext());
+
+    const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+    await startHandler();
+
+    // Verify session is running
+    expect(statusBarMock.text).toContain('main');
+
+    // Delete the session
+    showQuickPick.mockResolvedValue({
+      label: 'Yes, delete active session',
+      description: `ID: 1, Branch: main`,
+    });
+
+    const deleteHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.delete')?.[1];
+    await deleteHandler();
+
+    // Status bar should be cleared
+    expect(statusBarMock.text).toBe('$(clock) SentryTimer');
+    expect(statusBarMock.tooltip).toBe('No active session');
+  });
+});
