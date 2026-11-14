@@ -4,6 +4,9 @@
   "description": "Core time tracking library with git detection, session logging, and reporting.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "sentry-timer": "./dist/cli.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "jest --ci --runInBand --forceExit",

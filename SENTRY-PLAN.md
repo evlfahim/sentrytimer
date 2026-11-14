@@ -30,7 +30,7 @@ Core logic is isolated in `packages/core`; the VS Code extension (`packages/plug
 - [x] 3. Implement `core/src/logger.ts` to start/stop sessions and persist entries to SQLite; verify with `node dist/logger.js start` and `stop`.
 - [x] 4. Implement `core/src/report.ts` to generate weekly summaries by repo and branch; verify with `node dist/report.js` outputting Markdown.
 - [x] 5. Add comprehensive unit tests for git detection, logging, and reporting; verify with `npm test` passing all assertions.
-- [ ] 6. Create `packages/cli.ts` to expose core functionality via command-line interface; verify with `node dist/cli.js --help` and `start` commands.
+- [x] 6. Create `packages/cli.ts` to expose core functionality via command-line interface; verify with `node dist/cli.js --help` and `start` commands.
 - [ ] 7. Test CLI end-to-end in a git repository; verify entries are created and reports reflect CLI usage.
 - [ ] 8. Scaffold `packages/plugin` with VS Code extension manifest and activation events; verify `vsce package` generates a valid `.vsix`.
 - [ ] 9. Integrate `@sentry-timer/core` into the plugin; verify imports resolve and core functions execute within the extension context.
