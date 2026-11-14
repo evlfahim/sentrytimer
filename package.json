@@ -8,7 +8,7 @@
     "packages/plugin"
   ],
   "scripts": {
-    "build": "npm run build -w @sentry-timer/core && npm run build -w @sentry-timer/plugin",
+    "build": "npm run build -w @sentry-timer/core && npm run build -w sentry-timer",
     "test": "jest --ci --runInBand --forceExit",
     "test:core": "jest --ci --runInBand --forceExit --selectProjects core",
     "test:plugin": "jest --ci --runInBand --forceExit --selectProjects plugin",
