@@ -82,8 +82,8 @@ export function generateWeeklyReport(entries: TimeEntry[]): WeeklyReport {
     byRepo.get(entry.repoPath)!.totalMs += duration;
     byRepo.get(entry.repoPath)!.entries.push(entry);
 
-    // Group by branch (keyed as "repoPath/branch")
-    const branchKey = `${entry.repoPath}/${entry.branch}`;
+    // Group by branch (keyed as "repoPath|||branch")
+    const branchKey = `${entry.repoPath}|||${entry.branch}`;
     if (!byBranch.has(branchKey)) {
       byBranch.set(branchKey, { totalMs: 0, entries: [] });
     }
@@ -141,7 +141,10 @@ export function generateMarkdownReport(report: WeeklyReport): string {
     md += `| Repository | Branch | Time |\n`;
     md += `| ---------- | ------ | ---- |\n`;
     for (const [branchKey, data] of report.byBranch) {
-      const [repoPath, branch] = branchKey.split('/');
+      // branchKey is "${repoPath}|||${branch}"
+      const sepIdx = branchKey.indexOf('|||');
+      const repoPath = branchKey.substring(0, sepIdx);
+      const branch = branchKey.substring(sepIdx + 3);
       md += `| \`${repoPath}\` | \`${branch}\` | ${formatDuration(data.totalMs)} |\n`;
     }
     md += `\n`;
