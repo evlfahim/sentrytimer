@@ -38,6 +38,16 @@
         "command": "sentry-timer.report",
         "title": "SentryTimer: Generate Weekly Report",
         "icon": "$(report)"
+      },
+      {
+        "command": "sentry-timer.delete",
+        "title": "SentryTimer: Delete Session",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "sentry-timer.list",
+        "title": "SentryTimer: List Sessions",
+        "icon": "$(list-unordered)"
       }
     ],
     "menus": {
@@ -52,6 +62,14 @@
         },
         {
           "command": "sentry-timer.report",
+          "when": "true"
+        },
+        {
+          "command": "sentry-timer.delete",
+          "when": "true"
+        },
+        {
+          "command": "sentry-timer.list",
           "when": "true"
         }
       ]

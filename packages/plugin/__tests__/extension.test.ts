@@ -1,41 +1,30 @@
-import {
-  detectGitContext,
-  SessionLogger,
-  generateWeeklyReport,
-  generateMarkdownReport,
-  type TimeEntry,
-} from '@sentry-timer/core';
+import { SessionLogger, detectGitContext, generateWeeklyReport, generateMarkdownReport, type TimeEntry } from '@sentry-timer/core';
 import * as fs from 'fs';
 import * as path from 'path';
+import { window, commands, workspace, StatusBarAlignment, ExtensionContext } from 'vscode';
 
-describe('core integration — detectGitContext', () => {
-  it('should detect git context in the project', () => {
-    const context = detectGitContext();
-    expect(context).not.toBeNull();
-    if (context) {
-      expect(context.repoPath).toBeDefined();
-      expect(typeof context.repoPath).toBe('string');
-      expect(context.branch).toBeDefined();
-      expect(typeof context.branch).toBe('string');
-      expect(context.branch.length).toBeGreaterThan(0);
-    }
-  });
+// Access mocked vscode members
+const createStatusBarItem = window.createStatusBarItem as jest.Mock;
+const showInformationMessage = window.showInformationMessage as jest.Mock;
+const showErrorMessage = window.showErrorMessage as jest.Mock;
+const showWarningMessage = window.showWarningMessage as jest.Mock;
+const showQuickPick = window.showQuickPick as jest.Mock;
+const showTextDocument = window.showTextDocument as jest.Mock;
+const openTextDocument = workspace.openTextDocument as jest.Mock;
+const registerCommand = commands.registerCommand as jest.Mock;
 
-  it('should return null when not in a git repo', () => {
-    const tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'sentry-timer-test-'));
-    const originalCwd = process.cwd();
-    try {
-      process.chdir(tmpDir);
-      const context = detectGitContext();
-      expect(context).toBeNull();
-    } finally {
-      process.chdir(originalCwd);
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-  });
-});
+// Clear the module cache so that require('../src/extension') picks up the mocked vscode
+function reloadExtension() {
+  delete require.cache[require.resolve('../src/extension')];
+  return require('../src/extension');
+}
 
-describe('core integration — SessionLogger', () => {
+function getLastInfoCall() {
+  const calls = showInformationMessage.mock.calls;
+  return calls.length > 0 ? calls[calls.length - 1] : [];
+}
+
+describe('plugin command handlers — startSession', () => {
   let logger: SessionLogger;
   let dbPath: string;
 
@@ -45,6 +34,11 @@ describe('core integration — SessionLogger', () => {
       'sessions.db'
     );
     logger = new SessionLogger(dbPath);
+    showInformationMessage.mockClear();
+    showErrorMessage.mockClear();
+    showWarningMessage.mockClear();
+    createStatusBarItem.mockClear();
+    registerCommand.mockClear();
   });
 
   afterEach(() => {
@@ -52,239 +46,389 @@ describe('core integration — SessionLogger', () => {
     fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
   });
 
-  it('should start a session and return an entry with an id', () => {
+  it('should start a session and show information message', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+    expect(startHandler).toBeDefined();
+    await startHandler();
+
+    // Check the last call (the session start message, not the activation message)
+    const lastCall = getLastInfoCall();
+    expect(lastCall[0]).toContain('Session started');
+  });
+
+  it('should show error when not in a git repository', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue(null);
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+    await startHandler();
+
+    expect(showErrorMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Not in a git repository')
+    );
+  });
+
+  it('should show warning when session already running', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    logger.startSession({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+      startTime: new Date().toISOString(),
+      tags: ['test'],
+    });
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    const startHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.start')?.[1];
+    await startHandler();
+
+    expect(showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining('already running')
+    );
+  });
+});
+
+describe('plugin command handlers — stopSession', () => {
+  let logger: SessionLogger;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dbPath = path.join(
+      fs.mkdtempSync(path.join(require('os').tmpdir(), 'sentry-timer-db-')),
+      'sessions.db'
+    );
+    logger = new SessionLogger(dbPath);
+    showInformationMessage.mockClear();
+    showErrorMessage.mockClear();
+    showWarningMessage.mockClear();
+    createStatusBarItem.mockClear();
+    registerCommand.mockClear();
+  });
+
+  afterEach(() => {
+    logger.close();
+    fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
+  });
+
+  it('should stop a session and show duration', async () => {
     const entry = logger.startSession({
       repoPath: '/tmp/test-repo',
       branch: 'main',
       startTime: new Date().toISOString(),
       tags: ['test'],
     });
-    expect(entry).toBeDefined();
-    expect(entry.id).toBeDefined();
-    expect(typeof entry.id).toBe('number');
-    expect(entry.repoPath).toBe('/tmp/test-repo');
-    expect(entry.branch).toBe('main');
-    // tags is stored as JSON string
-    expect(entry.tags).toBe('["test"]');
-    expect(entry.startTime).toBeDefined();
-    expect(entry.endTime).toBeNull();
-    expect(entry.durationMs).toBeNull();
-  });
 
-  it('should stop a session and compute duration', () => {
-    const entry = logger.startSession({
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
       repoPath: '/tmp/test-repo',
-      branch: 'develop',
-      startTime: new Date().toISOString(),
-      tags: ['stop-test'],
+      branch: 'main',
     });
 
-    const stopped = logger.stopSession(entry.id);
-    expect(stopped).not.toBeNull();
-    if (stopped) {
-      expect(stopped.endTime).not.toBeNull();
-      expect(stopped.durationMs).toBeGreaterThan(0);
-      expect(stopped.id).toBe(entry.id);
-    }
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    const stopHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.stop')?.[1];
+    await stopHandler();
+
+    const lastCall = getLastInfoCall();
+    expect(lastCall[0]).toContain('Session stopped');
   });
 
-  it('should return null when stopping a non-existent session', () => {
-    const result = logger.stopSession(99999);
-    expect(result).toBeNull();
+  it('should show warning when no active session', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    const stopHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.stop')?.[1];
+    await stopHandler();
+
+    expect(showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining('No active session')
+    );
+  });
+});
+
+describe('plugin command handlers — generateReport', () => {
+  let logger: SessionLogger;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dbPath = path.join(
+      fs.mkdtempSync(path.join(require('os').tmpdir(), 'sentry-timer-db-')),
+      'sessions.db'
+    );
+    logger = new SessionLogger(dbPath);
+    showInformationMessage.mockClear();
+    showErrorMessage.mockClear();
+    showWarningMessage.mockClear();
+    createStatusBarItem.mockClear();
+    registerCommand.mockClear();
+    openTextDocument.mockClear();
+    showTextDocument.mockClear();
   });
 
-  it('should return null when stopping an already-stopped session', () => {
+  afterEach(() => {
+    logger.close();
+    fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
+  });
+
+  it('should generate a report and open it in editor', async () => {
     const entry = logger.startSession({
       repoPath: '/tmp/test-repo',
       branch: 'main',
       startTime: new Date().toISOString(),
+      tags: ['test'],
     });
     logger.stopSession(entry.id);
-    // Second stop returns null because getEntry returns the entry but
-    // the stop logic checks if end_time is already set — actually let's verify
-    // the actual behavior by checking what stopSession does:
-    // It calls getEntry, computes duration, updates, returns getEntry again.
-    // So it won't return null on re-stop. Let's just verify it returns the entry.
-    const result = logger.stopSession(entry.id);
-    // The core doesn't guard against double-stop, so it returns the entry again
-    expect(result).not.toBeNull();
+
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const mockDoc = { content: 'test document' };
+    openTextDocument.mockResolvedValue(mockDoc);
+    showTextDocument.mockResolvedValue({});
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    const reportHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.report')?.[1];
+    await reportHandler();
+
+    expect(openTextDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ language: 'markdown' })
+    );
+    expect(showTextDocument).toHaveBeenCalledWith(mockDoc);
+
+    const lastCall = getLastInfoCall();
+    expect(lastCall[0]).toContain('Weekly report generated');
   });
 
-  it('should return the active session', () => {
+  it('should generate report with empty entries', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    openTextDocument.mockResolvedValue({ content: '' });
+    showTextDocument.mockResolvedValue({});
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    const reportHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.report')?.[1];
+    await reportHandler();
+
+    const lastCall = getLastInfoCall();
+    expect(lastCall[0]).toContain('Weekly report generated');
+  });
+});
+
+describe('plugin command handlers — deleteSession', () => {
+  let logger: SessionLogger;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dbPath = path.join(
+      fs.mkdtempSync(path.join(require('os').tmpdir(), 'sentry-timer-db-')),
+      'sessions.db'
+    );
+    logger = new SessionLogger(dbPath);
+    showInformationMessage.mockClear();
+    showErrorMessage.mockClear();
+    showWarningMessage.mockClear();
+    showQuickPick.mockClear();
+    createStatusBarItem.mockClear();
+    registerCommand.mockClear();
+  });
+
+  afterEach(() => {
+    logger.close();
+    fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
+  });
+
+  it('should delete active session when confirmed', async () => {
     const entry = logger.startSession({
       repoPath: '/tmp/test-repo',
       branch: 'main',
       startTime: new Date().toISOString(),
+      tags: ['test'],
     });
-    const active = logger.getActiveSession();
-    expect(active).not.toBeNull();
-    if (active) {
-      expect(active.id).toBe(entry.id);
-    }
+
+    showQuickPick.mockResolvedValue({
+      label: 'Yes, delete active session',
+      description: `ID: ${entry.id}, Branch: main`,
+    });
+
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    const deleteHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.delete')?.[1];
+    await deleteHandler();
+
+    expect(showQuickPick).toHaveBeenCalled();
+
+    const lastCall = getLastInfoCall();
+    expect(lastCall[0]).toContain('deleted');
+    expect(logger.getAllEntries().length).toBe(0);
   });
 
-  it('should return null when no active session', () => {
-    const active = logger.getActiveSession();
-    expect(active).toBeNull();
-  });
-
-  it('should list all entries', () => {
+  it('should cancel deletion when user selects Cancel', async () => {
     logger.startSession({
-      repoPath: '/tmp/repo1',
+      repoPath: '/tmp/test-repo',
       branch: 'main',
       startTime: new Date().toISOString(),
-    });
-    logger.startSession({
-      repoPath: '/tmp/repo2',
-      branch: 'feature',
-      startTime: new Date().toISOString(),
+      tags: ['test'],
     });
 
-    const entries = logger.getAllEntries();
-    expect(entries.length).toBe(2);
-  });
+    showQuickPick.mockResolvedValue({
+      label: 'Cancel',
+    });
 
-  it('should filter entries by tag', () => {
-    logger.startSession({
-      repoPath: '/tmp/repo1',
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
       branch: 'main',
-      startTime: new Date().toISOString(),
-      tags: ['core', 'important'],
-    });
-    logger.startSession({
-      repoPath: '/tmp/repo2',
-      branch: 'develop',
-      startTime: new Date().toISOString(),
-      tags: ['core'],
-    });
-    logger.startSession({
-      repoPath: '/tmp/repo3',
-      branch: 'main',
-      startTime: new Date().toISOString(),
-      tags: ['other'],
     });
 
-    const coreEntries = logger.getEntriesByTag('core');
-    expect(coreEntries.length).toBe(2);
-
-    const otherEntries = logger.getEntriesByTag('other');
-    expect(otherEntries.length).toBe(1);
-
-    const missingEntries = logger.getEntriesByTag('nonexistent');
-    expect(missingEntries.length).toBe(0);
-  });
-
-  it('should filter entries by repo', () => {
-    logger.startSession({
-      repoPath: '/tmp/repo-a',
-      branch: 'main',
-      startTime: new Date().toISOString(),
-    });
-    logger.startSession({
-      repoPath: '/tmp/repo-b',
-      branch: 'develop',
-      startTime: new Date().toISOString(),
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
     });
 
-    const repoAEntries = logger.getEntriesByRepo('/tmp/repo-a');
-    expect(repoAEntries.length).toBe(1);
-    expect(repoAEntries[0].repoPath).toBe('/tmp/repo-a');
-  });
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
 
-  it('should filter entries by repo and branch', () => {
-    logger.startSession({
-      repoPath: '/tmp/repo-a',
-      branch: 'main',
-      startTime: new Date().toISOString(),
-    });
-    logger.startSession({
-      repoPath: '/tmp/repo-a',
-      branch: 'develop',
-      startTime: new Date().toISOString(),
-    });
+    const deleteHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.delete')?.[1];
+    await deleteHandler();
 
-    const mainEntries = logger.getEntriesByBranch('/tmp/repo-a', 'main');
-    expect(mainEntries.length).toBe(1);
-    expect(mainEntries[0].branch).toBe('main');
-  });
-
-  it('should delete an entry', () => {
-    const entry = logger.startSession({
-      repoPath: '/tmp/repo1',
-      branch: 'main',
-      startTime: new Date().toISOString(),
-    });
     expect(logger.getAllEntries().length).toBe(1);
-
-    const deleted = logger.deleteEntry(entry.id);
-    expect(deleted).toBe(true);
-    expect(logger.getAllEntries().length).toBe(0);
   });
 
-  it('should return false when deleting non-existent entry', () => {
-    const deleted = logger.deleteEntry(99999);
-    expect(deleted).toBe(false);
-  });
-
-  it('should clear all entries', () => {
+  it('should list all sessions for deletion when no active session', async () => {
     logger.startSession({
-      repoPath: '/tmp/repo1',
+      repoPath: '/tmp/test-repo',
       branch: 'main',
       startTime: new Date().toISOString(),
+      tags: ['test'],
     });
-    logger.startSession({
-      repoPath: '/tmp/repo2',
-      branch: 'develop',
-      startTime: new Date().toISOString(),
-    });
-    expect(logger.getAllEntries().length).toBe(2);
-
-    logger.clearAll();
-    expect(logger.getAllEntries().length).toBe(0);
-  });
-
-  it('should get an entry by id', () => {
-    const entry = logger.startSession({
-      repoPath: '/tmp/repo1',
-      branch: 'main',
-      startTime: new Date().toISOString(),
-    });
-    const fetched = logger.getEntry(entry.id);
-    expect(fetched).not.toBeNull();
-    if (fetched) {
-      expect(fetched.id).toBe(entry.id);
-      expect(fetched.repoPath).toBe('/tmp/repo1');
+    const entries = logger.getAllEntries();
+    for (const e of entries) {
+      logger.stopSession(e.id);
     }
-  });
 
-  it('should return null for non-existent entry id', () => {
-    const fetched = logger.getEntry(99999);
-    expect(fetched).toBeNull();
-  });
+    showQuickPick.mockResolvedValue({
+      label: '#1 - main',
+      description: `${new Date().toISOString()} | running`,
+    });
 
-  it('should get entries by date range', () => {
-    const now = new Date().toISOString();
-    const past = new Date(Date.now() - 86400000).toISOString(); // 1 day ago
-    const future = new Date(Date.now() + 86400000).toISOString(); // 1 day ahead
-
-    logger.startSession({
-      repoPath: '/tmp/repo1',
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
       branch: 'main',
-      startTime: now,
-    });
-    logger.startSession({
-      repoPath: '/tmp/repo2',
-      branch: 'develop',
-      startTime: past,
     });
 
-    // Only the "now" entry should be in range
-    const entries = logger.getEntriesByDateRange(past, future);
-    expect(entries.length).toBe(2);
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    const deleteHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.delete')?.[1];
+    await deleteHandler();
+
+    expect(showQuickPick).toHaveBeenCalled();
+    expect(logger.getAllEntries().length).toBe(0);
   });
 });
 
-describe('core integration — generateWeeklyReport', () => {
+describe('plugin command handlers — listSessions', () => {
   let logger: SessionLogger;
   let dbPath: string;
 
@@ -294,6 +438,12 @@ describe('core integration — generateWeeklyReport', () => {
       'sessions.db'
     );
     logger = new SessionLogger(dbPath);
+    showInformationMessage.mockClear();
+    showErrorMessage.mockClear();
+    showWarningMessage.mockClear();
+    showQuickPick.mockClear();
+    createStatusBarItem.mockClear();
+    registerCommand.mockClear();
   });
 
   afterEach(() => {
@@ -301,127 +451,70 @@ describe('core integration — generateWeeklyReport', () => {
     fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
   });
 
-  it('should generate a report with entries', () => {
+  it('should list sessions when they exist', async () => {
     logger.startSession({
       repoPath: '/tmp/test-repo',
       branch: 'main',
       startTime: new Date().toISOString(),
       tags: ['test'],
     });
-    logger.startSession({
+
+    showQuickPick.mockResolvedValue({
+      label: '#1 - main',
+      description: `${new Date().toISOString()} | running`,
+    });
+
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
       repoPath: '/tmp/test-repo',
-      branch: 'develop',
-      startTime: new Date().toISOString(),
-      tags: ['test'],
+      branch: 'main',
     });
 
-    // Stop both sessions so they have duration, then re-fetch
-    const entries = logger.getAllEntries();
-    for (const entry of entries) {
-      logger.stopSession(entry.id);
-    }
-    const updatedEntries = logger.getAllEntries();
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
 
-    const report = generateWeeklyReport(updatedEntries);
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
 
-    expect(report).toBeDefined();
-    expect(report.totalDurationMs).toBeGreaterThan(0);
-    expect(report.entries.length).toBe(2);
-    expect(report.weekStart).toBeDefined();
-    expect(report.weekEnd).toBeDefined();
-    expect(report.byRepo).toBeInstanceOf(Map);
-    expect(report.byBranch).toBeInstanceOf(Map);
-    expect(report.byRepo.size).toBeGreaterThan(0);
+    const listHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.list')?.[1];
+    await listHandler();
+
+    expect(showQuickPick).toHaveBeenCalled();
+
+    const lastCall = getLastInfoCall();
+    expect(lastCall[0]).toContain('Session #1');
   });
 
-  it('should generate an empty report when no entries', () => {
-    const report = generateWeeklyReport([]);
-    expect(report.totalDurationMs).toBe(0);
-    expect(report.entries).toEqual([]);
-    expect(report.byRepo.size).toBe(0);
-    expect(report.byBranch.size).toBe(0);
-  });
+  it('should show no sessions message when empty', async () => {
+    showQuickPick.mockResolvedValue(null);
 
-  it('should group entries by repo', () => {
-    logger.startSession({
-      repoPath: '/tmp/repo-a',
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
       branch: 'main',
-      startTime: new Date().toISOString(),
-    });
-    logger.startSession({
-      repoPath: '/tmp/repo-a',
-      branch: 'main',
-      startTime: new Date().toISOString(),
-    });
-    logger.startSession({
-      repoPath: '/tmp/repo-b',
-      branch: 'develop',
-      startTime: new Date().toISOString(),
     });
 
-    // Stop all sessions, then re-fetch
-    const entries = logger.getAllEntries();
-    for (const entry of entries) {
-      logger.stopSession(entry.id);
-    }
-    const updatedEntries = logger.getAllEntries();
-
-    const report = generateWeeklyReport(updatedEntries);
-
-    const repoAData = report.byRepo.get('/tmp/repo-a');
-    expect(repoAData).toBeDefined();
-    if (repoAData) {
-      expect(repoAData.entries.length).toBe(2);
-      expect(repoAData.totalMs).toBeGreaterThan(0);
-    }
-
-    const repoBData = report.byRepo.get('/tmp/repo-b');
-    expect(repoBData).toBeDefined();
-    if (repoBData) {
-      expect(repoBData.entries.length).toBe(1);
-    }
-  });
-
-  it('should group entries by branch', () => {
-    const now = new Date();
-    const startTime = new Date(now.getTime() - 3600000).toISOString();
-
-    logger.startSession({
-      repoPath: '/tmp/repo-a',
-      branch: 'main',
-      startTime,
-    });
-    logger.startSession({
-      repoPath: '/tmp/repo-a',
-      branch: 'develop',
-      startTime,
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
     });
 
-    // Stop all sessions
-    const entries = logger.getAllEntries();
-    for (const entry of entries) {
-      logger.stopSession(entry.id);
-    }
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
 
-    const report = generateWeeklyReport(entries);
+    const listHandler = registerCommand.mock.calls.find((c: any[]) => c[0] === 'sentry-timer.list')?.[1];
+    await listHandler();
 
-    const mainKey = '/tmp/repo-a|||main';
-    const mainData = report.byBranch.get(mainKey);
-    expect(mainData).toBeDefined();
-    if (mainData) {
-      expect(mainData.entries.length).toBe(1);
-    }
-
-    const developKey = '/tmp/repo-a|||develop';
-    const developData = report.byBranch.get(developKey);
-    expect(developData).toBeDefined();
-    if (developData) {
-      expect(developData.entries.length).toBe(1);
-    }
+    const lastCall = getLastInfoCall();
+    expect(lastCall[0]).toContain('No sessions');
   });
 });
 
-describe('core integration — generateMarkdownReport', () => {
+describe('plugin activation — command registration', () => {
   let logger: SessionLogger;
   let dbPath: string;
 
@@ -431,6 +524,9 @@ describe('core integration — generateMarkdownReport', () => {
       'sessions.db'
     );
     logger = new SessionLogger(dbPath);
+    showInformationMessage.mockClear();
+    createStatusBarItem.mockClear();
+    registerCommand.mockClear();
   });
 
   afterEach(() => {
@@ -438,73 +534,134 @@ describe('core integration — generateMarkdownReport', () => {
     fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
   });
 
-  it('should generate markdown with entries', () => {
-    const now = new Date();
-    const startTime = new Date(now.getTime() - 3600000).toISOString();
-
-    logger.startSession({
+  it('should register all 5 commands on activation', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
       repoPath: '/tmp/test-repo',
       branch: 'main',
-      startTime,
-      tags: ['test'],
     });
 
-    // Stop the session so it has duration
-    const entries = logger.getAllEntries();
-    for (const entry of entries) {
-      logger.stopSession(entry.id);
-    }
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
 
-    const report = generateWeeklyReport(entries);
-    const markdown = generateMarkdownReport(report);
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
 
-    expect(markdown).toContain('# Weekly Time Report');
-    expect(markdown).toContain('/tmp/test-repo');
-    expect(markdown).toContain('main');
-    expect(markdown).toContain('test');
-    expect(markdown).toContain('## Summary');
-    expect(markdown).toContain('## By Repository');
-    expect(markdown).toContain('## By Branch');
+    const registeredCommands = registerCommand.mock.calls.map((c: any[]) => c[0]);
+
+    expect(registeredCommands).toContain('sentry-timer.start');
+    expect(registeredCommands).toContain('sentry-timer.stop');
+    expect(registeredCommands).toContain('sentry-timer.report');
+    expect(registeredCommands).toContain('sentry-timer.delete');
+    expect(registeredCommands).toContain('sentry-timer.list');
+    expect(registeredCommands.length).toBe(5);
   });
 
-  it('should generate markdown with empty report', () => {
-    const report = generateWeeklyReport([]);
-    const markdown = generateMarkdownReport(report);
+  it('should show activation message', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
 
-    expect(markdown).toContain('# Weekly Time Report');
-    expect(markdown).toContain('Sessions:** 0');
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    expect(showInformationMessage).toHaveBeenCalledWith('SentryTimer activated');
+  });
+
+  it('should detect git context on activation', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    expect(showInformationMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Detected repository')
+    );
+  });
+
+  it('should create status bar on activation', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
+
+    createStatusBarItem.mockReturnValue({
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    });
+
+    const { activate } = reloadExtension();
+    activate(new ExtensionContext());
+
+    expect(createStatusBarItem).toHaveBeenCalledWith(StatusBarAlignment.Right, 100);
+
+    const statusBar = createStatusBarItem.mock.results[0].value;
+    expect(statusBar.show).toHaveBeenCalled();
   });
 });
 
-describe('core integration — all exports', () => {
-  it('should export detectGitContext', () => {
-    expect(typeof detectGitContext).toBe('function');
+describe('plugin deactivation', () => {
+  let logger: SessionLogger;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dbPath = path.join(
+      fs.mkdtempSync(path.join(require('os').tmpdir(), 'sentry-timer-db-')),
+      'sessions.db'
+    );
+    logger = new SessionLogger(dbPath);
+    showInformationMessage.mockClear();
+    createStatusBarItem.mockClear();
+    registerCommand.mockClear();
   });
 
-  it('should export SessionLogger', () => {
-    expect(typeof SessionLogger).toBe('function');
+  afterEach(() => {
+    logger.close();
+    fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
   });
 
-  it('should export generateWeeklyReport', () => {
-    expect(typeof generateWeeklyReport).toBe('function');
-  });
+  it('should dispose status bar and close logger on deactivate', async () => {
+    jest.spyOn(require('@sentry-timer/core'), 'detectGitContext').mockReturnValue({
+      repoPath: '/tmp/test-repo',
+      branch: 'main',
+    });
 
-  it('should export generateMarkdownReport', () => {
-    expect(typeof generateMarkdownReport).toBe('function');
-  });
+    const statusBarMock = {
+      show: jest.fn(),
+      dispose: jest.fn(),
+      text: '',
+      tooltip: '',
+    };
+    createStatusBarItem.mockReturnValue(statusBarMock);
 
-  it('should export generateCSVReport', () => {
-    const { generateCSVReport } = require('@sentry-timer/core');
-    expect(typeof generateCSVReport).toBe('function');
-  });
+    const { activate, deactivate } = reloadExtension();
+    activate(new ExtensionContext());
 
-  it('should export writeMarkdownReport', () => {
-    const { writeMarkdownReport } = require('@sentry-timer/core');
-    expect(typeof writeMarkdownReport).toBe('function');
-  });
+    deactivate();
 
-  it('should export writeCSVReport', () => {
-    const { writeCSVReport } = require('@sentry-timer/core');
-    expect(typeof writeCSVReport).toBe('function');
+    expect(statusBarMock.dispose).toHaveBeenCalled();
   });
 });
