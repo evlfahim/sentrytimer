@@ -40,6 +40,19 @@ describe('plugin command handlers — startSession', () => {
     showWarningMessage.mockClear();
     createStatusBarItem.mockClear();
     registerCommand.mockClear();
+    // Mock workspace.getConfiguration for config loading
+    workspace.getConfiguration = jest.fn((section?: string) => {
+      if (section === 'sentryTimer') {
+        return {
+          get: (key: string) => {
+            if (key === 'dbPath') return dbPath;
+            if (key === 'reportFrequency') return 'weekly';
+            return undefined;
+          },
+        };
+      }
+      return {};
+    });
   });
 
   afterEach(() => {
@@ -143,6 +156,18 @@ describe('plugin command handlers — stopSession', () => {
     showWarningMessage.mockClear();
     createStatusBarItem.mockClear();
     registerCommand.mockClear();
+    workspace.getConfiguration = jest.fn((section?: string) => {
+      if (section === 'sentryTimer') {
+        return {
+          get: (key: string) => {
+            if (key === 'dbPath') return dbPath;
+            if (key === 'reportFrequency') return 'weekly';
+            return undefined;
+          },
+        };
+      }
+      return {};
+    });
   });
 
   afterEach(() => {
@@ -226,6 +251,18 @@ describe('plugin command handlers — generateReport', () => {
     registerCommand.mockClear();
     openTextDocument.mockClear();
     showTextDocument.mockClear();
+    workspace.getConfiguration = jest.fn((section?: string) => {
+      if (section === 'sentryTimer') {
+        return {
+          get: (key: string) => {
+            if (key === 'dbPath') return dbPath;
+            if (key === 'reportFrequency') return 'weekly';
+            return undefined;
+          },
+        };
+      }
+      return {};
+    });
   });
 
   afterEach(() => {

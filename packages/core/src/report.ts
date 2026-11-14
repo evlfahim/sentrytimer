@@ -1,6 +1,6 @@
 import { TimeEntry } from './logger';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
+import { type ReportFrequency } from './config';
 
 export interface WeeklyReport {
   weekStart: string;
@@ -12,10 +12,35 @@ export interface WeeklyReport {
 }
 
 /**
- * Gets the start of the week (Monday) for a given date.
+ * Gets the start of the period (week/biweek/month) for a given date.
  */
-function getWeekStart(date: Date): Date {
+function getPeriodStart(date: Date, frequency: ReportFrequency): Date {
   const d = new Date(date);
+
+  if (frequency === 'monthly') {
+    // Start of the month
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  if (frequency === 'biweekly') {
+    // Start of the current two-week period (based on the week of the date)
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    d.setHours(0, 0, 0, 0);
+    // Check if we're in the second week of the month
+    const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+    const weekNum = Math.floor((d.getTime() - monthStart.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    if (weekNum % 2 === 1) {
+      // Go back one week
+      d.setDate(d.getDate() - 7);
+    }
+    return d;
+  }
+
+  // Default: weekly (Monday)
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
@@ -24,13 +49,27 @@ function getWeekStart(date: Date): Date {
 }
 
 /**
- * Gets the end of the week (Sunday) for a given date.
+ * Gets the end of the period (week/biweek/month) for a given date.
  */
-function getWeekEnd(date: Date): Date {
-  const start = getWeekStart(date);
+function getPeriodEnd(date: Date, frequency: ReportFrequency): Date {
+  const start = getPeriodStart(date, frequency);
   const end = new Date(start);
-  end.setDate(start.getDate() + 6);
-  end.setHours(23, 59, 59, 999);
+
+  if (frequency === 'monthly') {
+    // End of the month
+    end.setMonth(start.getMonth() + 1);
+    end.setDate(0); // Last day of the month
+    end.setHours(23, 59, 59, 999);
+  } else if (frequency === 'biweekly') {
+    // End of the two-week period
+    end.setDate(start.getDate() + 13);
+    end.setHours(23, 59, 59, 999);
+  } else {
+    // Weekly: Sunday
+    end.setDate(start.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+  }
+
   return end;
 }
 
@@ -52,15 +91,17 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Generates a weekly report from a list of time entries.
+ * Generates a report from a list of time entries, filtered by the configured period.
+ * @param entries - All time entries to filter.
+ * @param frequency - The report frequency (weekly, biweekly, monthly).
  */
-export function generateWeeklyReport(entries: TimeEntry[]): WeeklyReport {
+export function generateWeeklyReport(entries: TimeEntry[], frequency: ReportFrequency = 'weekly'): WeeklyReport {
   const now = new Date();
-  const weekStart = getWeekStart(now);
-  const weekEnd = getWeekEnd(now);
+  const periodStart = getPeriodStart(now, frequency);
+  const periodEnd = getPeriodEnd(now, frequency);
 
-  const startDate = weekStart.toISOString();
-  const endDate = weekEnd.toISOString();
+  const startDate = periodStart.toISOString();
+  const endDate = periodEnd.toISOString();
 
   const filteredEntries = entries.filter(
     (entry) => entry.startTime >= startDate && entry.startTime <= endDate
@@ -92,8 +133,8 @@ export function generateWeeklyReport(entries: TimeEntry[]): WeeklyReport {
   }
 
   return {
-    weekStart: weekStart.toISOString(),
-    weekEnd: weekEnd.toISOString(),
+    weekStart: periodStart.toISOString(),
+    weekEnd: periodEnd.toISOString(),
     totalDurationMs,
     entries: filteredEntries,
     byRepo,

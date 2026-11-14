@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { join } from 'path';
 import { mkdirSync, existsSync } from 'fs';
+import { type SentryTimerConfig, loadConfig } from './config';
 
 export interface TimeEntry {
   id: number;
@@ -35,8 +36,15 @@ export class SessionLogger {
   private db: Database.Database;
   private dbPath: string;
 
-  constructor(dbPath: string = DEFAULT_DB_PATH) {
-    this.dbPath = dbPath;
+  constructor(dbPath?: string, config?: SentryTimerConfig) {
+    // Resolve dbPath: explicit argument > config > default
+    if (dbPath) {
+      this.dbPath = dbPath;
+    } else if (config?.dbPath) {
+      this.dbPath = config.dbPath;
+    } else {
+      this.dbPath = DEFAULT_DB_PATH;
+    }
     this.ensureDbDir();
     this.db = new Database(this.dbPath);
     this.initializeSchema();

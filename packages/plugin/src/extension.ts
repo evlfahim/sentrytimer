@@ -5,6 +5,9 @@ import {
   generateWeeklyReport,
   generateMarkdownReport,
   type TimeEntry,
+  type ReportFrequency,
+  loadConfig,
+  mergeConfig,
 } from '@sentry-timer/core';
 import { join } from 'path';
 
@@ -191,14 +194,49 @@ function stopElapsedTimer(): void {
   }
 }
 
-export function activate(context: ExtensionContext) {
+/**
+ * Read VS Code settings and merge with the core config.
+ * Returns a config object suitable for SessionLogger.
+ */
+function getExtensionConfig(): { dbPath?: string; reportFrequency?: ReportFrequency } {
+  const config = workspace.getConfiguration('sentryTimer');
+  const result: { dbPath?: string; reportFrequency?: ReportFrequency } = {};
+
+  const dbPath = config.get<string>('dbPath');
+  if (dbPath) {
+    result.dbPath = dbPath;
+  }
+
+  const reportFrequency = config.get<ReportFrequency>('reportFrequency');
+  if (reportFrequency && ['weekly', 'biweekly', 'monthly'].includes(reportFrequency)) {
+    result.reportFrequency = reportFrequency;
+  }
+
+  return result;
+}
+
+/**
+ * Initialize the session logger with configuration from VS Code settings.
+ */
+function initSessionLogger(): void {
   // Use test logger if provided, otherwise create a new one
   if (_testLogger) {
     sessionLogger = _testLogger;
-  } else {
-    const dbPath = join(process.cwd(), '.sentry-timer', 'sessions.db');
-    sessionLogger = new SessionLogger(dbPath);
+    return;
   }
+
+  // Load core config (from env vars and .sentry-timer.json)
+  const coreConfig = loadConfig();
+
+  // Merge with VS Code settings (VS Code settings override core config)
+  const vscodeSettings = getExtensionConfig();
+  const mergedConfig = mergeConfig(coreConfig, vscodeSettings);
+
+  sessionLogger = new SessionLogger(undefined, mergedConfig);
+}
+
+export function activate(context: ExtensionContext) {
+  initSessionLogger();
 
   // Create and configure the status bar
   statusBar = window.createStatusBarItem(StatusBarAlignment.Right, 100);
@@ -337,7 +375,9 @@ async function generateReport(): Promise<void> {
   }
 
   const allEntries = sessionLogger.getAllEntries();
-  const report = generateWeeklyReport(allEntries);
+  const config = getExtensionConfig();
+  const reportFrequency: ReportFrequency = config.reportFrequency || 'weekly';
+  const report = generateWeeklyReport(allEntries, reportFrequency);
   const markdown = generateMarkdownReport(report);
 
   const document = await workspace.openTextDocument({

@@ -73,6 +73,28 @@
           "when": "true"
         }
       ]
+    },
+    "configuration": {
+      "title": "SentryTimer",
+      "properties": {
+        "sentryTimer.dbPath": {
+          "type": "string",
+          "default": "",
+          "description": "Custom path to the SQLite database file. Leave empty to use the default location (.sentry-timer/sessions.db in the current working directory).",
+          "scope": "application"
+        },
+        "sentryTimer.reportFrequency": {
+          "type": "string",
+          "enum": [
+            "weekly",
+            "biweekly",
+            "monthly"
+          ],
+          "default": "weekly",
+          "description": "How often reports should cover. Determines the time window for report generation.",
+          "scope": "application"
+        }
+      }
     }
   },
   "activationEvents": [

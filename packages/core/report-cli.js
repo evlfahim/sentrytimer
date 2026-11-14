@@ -7,8 +7,8 @@
  * generates a weekly report, and outputs it as Markdown.
  */
 
-const { SessionLogger } = require('./dist/logger');
-const { generateWeeklyReport, generateMarkdownReport } = require('./dist/report');
+const { SessionLogger } = require('./dist/src/logger');
+const { generateWeeklyReport, generateMarkdownReport } = require('./dist/src/report');
 const { join } = require('path');
 const { mkdirSync, existsSync, rmSync } = require('fs');
 

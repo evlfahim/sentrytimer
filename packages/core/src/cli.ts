@@ -22,27 +22,16 @@ import {
   generateWeeklyReport,
   generateMarkdownReport,
   generateCSVReport,
-} from './src/index';
+  loadConfig,
+  type ReportFrequency,
+} from './index';
 import { join } from 'path';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function getDbPath(): string {
-  const defaultPath = join(process.cwd(), '.sentry-timer', 'sessions.db');
-  const envPath = process.env.SENTRY_TIMER_DB;
-  if (envPath) {
-    const dir = envPath.substring(0, envPath.lastIndexOf('/'));
-    if (dir && !existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    return envPath;
-  }
-  const dir = defaultPath.substring(0, defaultPath.lastIndexOf('/'));
-  if (dir && !existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  return defaultPath;
+function getConfig(): ReturnType<typeof loadConfig> {
+  return loadConfig();
 }
 
 function getGitContext(): { repoPath: string; branch: string } | null {
@@ -132,6 +121,7 @@ function padRight(text: string, width: number): string {
 // ── Commands ─────────────────────────────────────────────────────────────────
 
 function cmdStart(tags: string[]): void {
+  const config = getConfig();
   const gitContext = getGitContext();
   if (!gitContext) {
     console.error('Error: Not in a git repository. Use --repo and --branch to specify manually.');
@@ -148,8 +138,7 @@ function cmdStart(tags: string[]): void {
     tags,
   };
 
-  const dbPath = getDbPath();
-  const logger = new SessionLogger(dbPath);
+  const logger = new SessionLogger(undefined, config);
 
   const session = logger.startSession(entry);
   console.log(`Started session #${session.id}`);
@@ -170,8 +159,8 @@ function cmdStart(tags: string[]): void {
 }
 
 function cmdStop(): void {
-  const dbPath = getDbPath();
-  const logger = new SessionLogger(dbPath);
+  const config = getConfig();
+  const logger = new SessionLogger(undefined, config);
 
   const active = logger.getActiveSession();
   if (!active) {
@@ -196,8 +185,8 @@ function cmdStop(): void {
 }
 
 function cmdStatus(): void {
-  const dbPath = getDbPath();
-  const logger = new SessionLogger(dbPath);
+  const config = getConfig();
+  const logger = new SessionLogger(undefined, config);
 
   const active = logger.getActiveSession();
   if (!active) {
@@ -220,8 +209,8 @@ function cmdStatus(): void {
 }
 
 function cmdList(options: { repo?: string; branch?: string; tag?: string; from?: string; to?: string }): void {
-  const dbPath = getDbPath();
-  const logger = new SessionLogger(dbPath);
+  const config = getConfig();
+  const logger = new SessionLogger(undefined, config);
 
   let entries: { id: number; repoPath: string; branch: string; startTime: string; endTime: string | null; durationMs: number | null }[];
 
@@ -243,11 +232,11 @@ function cmdList(options: { repo?: string; branch?: string; tag?: string; from?:
 }
 
 function cmdReport(options: { format?: string; output?: string }): void {
-  const dbPath = getDbPath();
-  const logger = new SessionLogger(dbPath);
+  const config = getConfig();
+  const logger = new SessionLogger(undefined, config);
 
   const entries = logger.getAllEntries();
-  const report = generateWeeklyReport(entries);
+  const report = generateWeeklyReport(entries, config.reportFrequency);
   const format = options.format || 'markdown';
 
   let content: string;
@@ -272,8 +261,8 @@ function cmdReport(options: { format?: string; output?: string }): void {
 }
 
 function cmdDelete(id: number): void {
-  const dbPath = getDbPath();
-  const logger = new SessionLogger(dbPath);
+  const config = getConfig();
+  const logger = new SessionLogger(undefined, config);
 
   const deleted = logger.deleteEntry(id);
   if (deleted) {
@@ -288,8 +277,8 @@ function cmdDelete(id: number): void {
 }
 
 function cmdClear(): void {
-  const dbPath = getDbPath();
-  const logger = new SessionLogger(dbPath);
+  const config = getConfig();
+  const logger = new SessionLogger(undefined, config);
 
   logger.clearAll();
   console.log('All sessions cleared.');
@@ -310,7 +299,7 @@ Commands:
   stop                Stop the active session
   status              Show the active session and elapsed time
   list [options]      List time entries
-  report [options]    Generate a weekly report
+  report [options]    Generate a report based on configured frequency
   delete <id>         Delete a session by ID
   clear               Delete all sessions
 
@@ -327,6 +316,21 @@ List Options:
 Report Options:
   --format <format>   Report format: markdown (default) or csv
   --output <path>     Write report to file instead of stdout
+
+Configuration:
+  The CLI reads configuration from:
+    1. .sentry-timer.json (found by walking up the directory tree)
+    2. Environment variables (SENTRY_TIMER_DB, SENTRY_TIMER_REPORT_FREQUENCY)
+
+  Config file (.sentry-timer.json) example:
+    {
+      "dbPath": "/path/to/sessions.db",
+      "reportFrequency": "weekly"
+    }
+
+  Environment variables:
+    SENTRY_TIMER_DB                  Path to the SQLite database
+    SENTRY_TIMER_REPORT_FREQUENCY    weekly | biweekly | monthly
 
 Examples:
   node dist/cli.js start

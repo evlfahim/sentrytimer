@@ -13,3 +13,11 @@ export {
   writeCSVReport,
   type WeeklyReport,
 } from './report';
+export {
+  type SentryTimerConfig,
+  type SentryTimerConfigFile,
+  type ReportFrequency,
+  loadConfig,
+  getDefaultConfig,
+  mergeConfig,
+} from './config';
