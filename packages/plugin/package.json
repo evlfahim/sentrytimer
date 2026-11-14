@@ -1,0 +1,25 @@
+{
+  "name": "@sentry-timer/plugin",
+  "version": "1.0.0",
+  "description": "VS Code extension wrapper for SentryTimer.",
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest --config jest.config.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@sentry-timer/core": "1.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.84.0",
+    "@types/jest": "^29.5.12",
+    "@vscode/vsce": "^2.22.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "vscode": "^1.84.0"
+  }
+}
