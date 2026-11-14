@@ -27,7 +27,7 @@ Core logic is isolated in `packages/core`; the VS Code extension (`packages/plug
 ## Steps
 - [x] 1. Initialize monorepo structure with `packages/core` and `packages/plugin`; configure TypeScript, Jest, and build scripts; verify build and test infrastructure with `npm run build && npm test`.
 - [x] 2. Implement `core/src/git.ts` to detect active git repository and branch using `git rev-parse`; verify with `node dist/git.js` in a test repo.
-- [ ] 3. Implement `core/src/logger.ts` to start/stop sessions and persist entries to SQLite; verify with `node dist/logger.js start` and `stop`.
+- [x] 3. Implement `core/src/logger.ts` to start/stop sessions and persist entries to SQLite; verify with `node dist/logger.js start` and `stop`.
 - [ ] 4. Implement `core/src/report.ts` to generate weekly summaries by repo and branch; verify with `node dist/report.js` outputting Markdown.
 - [ ] 5. Add comprehensive unit tests for git detection, logging, and reporting; verify with `npm test` passing all assertions.
 - [ ] 6. Create `packages/cli.ts` to expose core functionality via command-line interface; verify with `node dist/cli.js --help` and `start` commands.
