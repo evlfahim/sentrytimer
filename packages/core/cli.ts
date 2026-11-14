@@ -13,9 +13,16 @@
  *   node dist/cli.js --help
  */
 
-import { detectGitContext, getLastCommitHash, getLastCommitMessage } from './src/git';
-import { SessionLogger, type TimeEntryCreate } from './src/logger';
-import { generateWeeklyReport, generateMarkdownReport, generateCSVReport } from './src/report';
+import {
+  detectGitContext,
+  getLastCommitHash,
+  getLastCommitMessage,
+  SessionLogger,
+  type TimeEntryCreate,
+  generateWeeklyReport,
+  generateMarkdownReport,
+  generateCSVReport,
+} from './src/index';
 import { join } from 'path';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 
