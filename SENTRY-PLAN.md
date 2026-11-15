@@ -39,4 +39,4 @@ Core logic is isolated in `packages/core`; the VS Code extension (`packages/plug
 - [x] 12. Implement status bar UI showing current repo, branch, and elapsed time; verify UI updates on session start/stop.
 - [x] 13. Refactor core to export a clean API interface; verify plugin and CLI both use the same core without duplication.
 - [x] 14. Add configuration settings for report frequency and storage path; verify settings load correctly in plugin and CLI.
-- [ ] 15. Write `README.md` with installation, usage examples, weekly report format, and instructions to build the VS Code plugin; verify README covers all requirements.
+- [x] 15. Write `README.md` with installation, usage examples, weekly report format, and instructions to build the VS Code plugin; verify README covers all requirements.
